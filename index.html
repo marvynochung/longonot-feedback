@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Post-hike feedback</title>
+<style>
+:root{--bg:#f6f3ec;--card:#fff;--ink:#1d2b24;--mut:#6b7a72;--acc:#2f6b4f;--accink:#fff;--line:#d9d4c7;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121a16;--card:#1b2620;--ink:#eef2ee;--mut:#9aaaa1;--acc:#7cc79f;--accink:#0e1a14;--line:#2f3d35;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121a16;--card:#1b2620;--ink:#eef2ee;--mut:#9aaaa1;--acc:#7cc79f;--accink:#0e1a14;--line:#2f3d35;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:18px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:560px;padding:20px;display:flex;flex-direction:column;min-height:100%}
+.bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin:8px 0 28px}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .35s}
+.step{display:none;flex:1;flex-direction:column;animation:in .3s}
+.step.on{display:flex}
+@keyframes in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.eyebrow{color:var(--mut);font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+h1{font-size:30px;line-height:1.2;margin:8px 0 12px}
+h2{font-size:25px;line-height:1.25;margin:6px 0 8px}
+p.hint{color:var(--mut);margin:0 0 20px;font-size:16px}
+.scale{display:flex;gap:10px;margin:12px 0}
+.scale button{flex:1;aspect-ratio:1;max-height:72px;font-size:24px;border:2px solid var(--line);background:var(--card);color:var(--ink);border-radius:16px;cursor:pointer}
+.scale button.sel{background:var(--acc);color:var(--accink);border-color:var(--acc)}
+.ends{display:flex;justify-content:space-between;color:var(--mut);font-size:14px}
+textarea{width:100%;min-height:150px;padding:16px;font:inherit;color:var(--ink);background:var(--card);border:2px solid var(--line);border-radius:16px;resize:vertical}
+textarea:focus,button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chips span{padding:6px 12px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:14px;color:var(--mut)}
+.nav{display:flex;gap:12px;margin-top:auto;padding-top:24px}
+.btn{flex:1;padding:16px;font:inherit;font-weight:600;border-radius:14px;border:2px solid var(--acc);background:var(--acc);color:var(--accink);cursor:pointer}
+.btn.ghost{flex:0 0 auto;background:transparent;color:var(--ink);border-color:var(--line)}
+.btn:disabled{opacity:.4;cursor:default}
+.skip{background:none;border:0;color:var(--mut);font:inherit;text-decoration:underline;cursor:pointer;padding:8px}
+.done{text-align:center;margin:auto 0}
+.done .big{font-size:64px}
+.out{margin-top:16px;text-align:left}
+.out pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font:14px/1.5 ui-monospace,monospace;max-height:240px;overflow:auto}
+.row{display:flex;gap:10px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar"><i id="fill"></i></div>
+  <div id="stage"></div>
+</div>
+<script>
+// ---- Edit these ----
+var HIKE = "Longonot";
+var WHATSAPP = "254713846603"; // e.g. "2547XXXXXXXX" (no + or spaces). Used if online saving isn't available.
+var QUESTIONS = [
+  {id:"overall", type:"rating", q:"How would you rate your overall experience?", lo:"Not great", hi:"Loved it"},
+  {id:"enjoyed", type:"text", q:"What did you enjoy most about the hike?", ph:"A view, a moment, a person, anything..."},
+  {id:"logistics", type:"text", q:"What worked well, and what could we improve?", hint:"Think about:", chips:["Communication","Transport","Timing","Preparation"], ph:"Worked well: ...\nCould improve: ..."},
+  {id:"nexttime", type:"text", q:"What should we do differently next time?", ph:"Be as blunt as you like."},
+  {id:"difficulty", type:"rating", q:HIKE+" difficulty", hint:"How hard was it for you?", lo:"Easy", hi:"Brutal"},
+  {id:"aesthetic", type:"rating", q:HIKE+" aesthetic", hint:"How good did it look?", lo:"Meh", hi:"Stunning"},
+  {id:"review", type:"text", optional:true, q:"Want to leave us a review?", hint:"Optional. A few words we can share is perfect.", ph:"Your review..."}
+];
+// --------------------
+var ans = {}, i = -1, stage = document.getElementById("stage"), fill = document.getElementById("fill");
+function el(h){var d=document.createElement("div");d.innerHTML=h;return d.firstElementChild}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function render(){
+  stage.innerHTML="";
+  fill.style.width=Math.max(0,i)/QUESTIONS.length*100+"%";
+  if(i<0){
+    var s=el('<div class="step on"><div class="eyebrow">Post-hike feedback</div><h1>How was '+esc(HIKE)+'?</h1><p class="hint">7 quick questions, about 2 minutes. Tap, type, done.</p><div class="nav"><button class="btn" id="go">Let\u2019s go</button></div></div>');
+    stage.appendChild(s);document.getElementById("go").onclick=function(){i=0;render()};return;
+  }
+  if(i>=QUESTIONS.length){return finish()}
+  var q=QUESTIONS[i],h='<div class="step on"><div class="eyebrow">'+(i+1)+' of '+QUESTIONS.length+(q.optional?' \u00b7 optional':'')+'</div><h2>'+esc(q.q)+'</h2>';
+  if(q.hint)h+='<p class="hint">'+esc(q.hint)+'</p>';
+  if(q.chips)h+='<div class="chips">'+q.chips.map(function(c){return '<span>'+esc(c)+'</span>'}).join("")+'</div>';
+  if(q.type==="rating"){
+    h+='<div class="scale">'+[1,2,3,4,5].map(function(n){return '<button data-n="'+n+'" aria-label="'+n+' out of 5">'+n+'</button>'}).join("")+'</div><div class="ends"><span>'+esc(q.lo)+'</span><span>'+esc(q.hi)+'</span></div>';
+  } else {
+    h+='<textarea id="t" placeholder="'+esc(q.ph||"")+'"></textarea>';
+  }
+  h+='<div class="nav">'+(i>0?'<button class="btn ghost" id="back">Back</button>':'')+'<button class="btn" id="next" disabled>'+(i===QUESTIONS.length-1?'Send':'Next')+'</button></div>'+(q.type==="text"&&!q.optional?'<div style="text-align:center"><button class="skip" id="skip">Skip this one</button></div>':'')+'</div>';
+  stage.appendChild(el(h));
+  var next=document.getElementById("next");
+  function adv(){i++;render()}
+  if(q.type==="rating"){
+    var btns=stage.querySelectorAll(".scale button");
+    btns.forEach(function(b){
+      if(ans[q.id]==b.dataset.n){b.classList.add("sel");next.disabled=false}
+      b.onclick=function(){btns.forEach(function(x){x.classList.remove("sel")});b.classList.add("sel");ans[q.id]=+b.dataset.n;next.disabled=false;
+        if(i<QUESTIONS.length-1)setTimeout(function(){if(QUESTIONS[i]===q)adv()},280)};
+    });
+  } else {
+    var t=document.getElementById("t");t.value=ans[q.id]||"";
+    next.disabled=q.optional?false:!t.value.trim();
+    t.oninput=function(){ans[q.id]=t.value;next.disabled=q.optional?false:!t.value.trim()};
+    if(window.matchMedia("(pointer:fine)").matches)t.focus();
+    var sk=document.getElementById("skip");if(sk)sk.onclick=function(){ans[q.id]="";adv()};
+  }
+  next.onclick=adv;
+  var back=document.getElementById("back");if(back)back.onclick=function(){i--;render()};
+}
+function summary(){
+  return "Feedback: "+HIKE+"\n\n"+QUESTIONS.map(function(q,n){var a=ans[q.id];return (n+1)+". "+q.q+"\n"+(q.type==="rating"?(a||"-")+"/5":(String(a||"").trim()||"-"))}).join("\n\n");
+}
+var SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxzPLRG01q64az6cNlUG27JdG-MdcYkRhJUnDROPOKHKXFoPr4pu-4OHmQrQEE2BXJp2w/exec"; // paste your Apps Script /exec URL here
+var QKEY = "hikeQueue", sending = false;
+function getQ(){try{return JSON.parse(localStorage.getItem(QKEY)||"[]")}catch(e){return []}}
+function setQ(q){try{localStorage.setItem(QKEY,JSON.stringify(q))}catch(e){}}
+async function flush(){
+  if(sending||!SUBMIT_URL||!navigator.onLine)return getQ().length;
+  sending=true;var q=getQ(),left=[];
+  for(var k=0;k<q.length;k++){
+    try{
+      var r=await fetch(SUBMIT_URL,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(q[k])});
+      var j=await r.json();if(!j.ok)left.push(q[k]);
+    }catch(e){left.push(q[k])}
+  }
+  setQ(left);sending=false;return left.length;
+}
+function finish(){
+  fill.style.width="100%";
+  var entry={id:"r"+Date.now()+Math.random().toString(36).slice(2,6),hike:HIKE,at:new Date().toISOString(),answers:ans};
+  var q=getQ();q.push(entry);setQ(q);
+  var txt=summary(),wa="https://wa.me/"+WHATSAPP+"?text="+encodeURIComponent(txt);
+  stage.innerHTML='<div class="done"><div class="big">\ud83d\ude4f</div><h2>Thank you.</h2><p class="hint" id="st">Saved on your phone. Sending...</p>'+
+    '<div class="row" id="bk" style="display:none"><a class="btn" style="text-decoration:none;text-align:center" href="'+wa+'" target="_blank" rel="noopener">Also send on WhatsApp</a><button class="btn ghost" id="cp">Copy</button></div></div>';
+  var st=document.getElementById("st"),bk=document.getElementById("bk");
+  document.getElementById("cp").onclick=function(){var b=this;try{navigator.clipboard.writeText(txt).then(function(){b.textContent="Copied"})}catch(e){}};
+  function check(left){
+    if(!left){st.textContent="Sent. Thanks for helping us improve the next hike.";bk.style.display="none"}
+    else{st.textContent="Saved on your phone. It will send by itself when you have signal and this page is open. To be safe, you can also send it on WhatsApp.";bk.style.display="flex"}
+  }
+  flush().then(check);
+  window.addEventListener("online",function(){flush().then(check)});
+}
+window.addEventListener("online",flush);
+flush();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
+render();
+</script>
+</body>
+</html>
